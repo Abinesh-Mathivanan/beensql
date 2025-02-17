@@ -45,40 +45,59 @@ class ModelHandler:
 
     def _construct_prompt(self, user_query, column_names, previous_queries=None, previous_results=None, is_json=False):
         prompt = f"""
-        Given the user query: '{user_query}', generate a SQL query to retrieve the requested data from a table named 'data'.
-        The table has the following columns and their types: {', '.join(column_names)}.
+        You are a highly intelligent and robust AI assistant specializing in translating user's natural language queries into SQL for diverse databases.
+        The user is querying a table named 'data' with the following columns and their types: {', '.join(column_names)}.
+
+        **General Guidelines for Robust Query Generation:**
+
+        1. **Interpret User Intent Flexibly:** Understand the underlying intent of the user's query, even if the phrasing is not perfectly aligned with the database schema or data values.  Users may use synonyms, paraphrases, abbreviations, or different levels of detail.
+
+        2. **Handle Variations in Data Values:** Be prepared for user queries to use slightly different terminology or phrasing compared to the exact values stored in the database.  For example:
+        - User might say "high sales" when the database column is "sales_amount".
+        - User might use a category name like "Electronics" when the database has "Electronic Products".
+        - User might use abbreviations or common names instead of full names.
+
+        3. **Prioritize Semantic Matching over Exact String Matching:**  When comparing user-provided values (e.g., in WHERE clauses), aim for semantic similarity rather than strict, case-sensitive string matching, where appropriate and if possible with SQL capabilities (e.g., using `LIKE`, case-insensitive functions, or fuzzy matching techniques if DuckDB offers them and if relevant to the query intent).
+
+        4. **Assume Reasonable Defaults:** If the user's query is slightly ambiguous, make reasonable assumptions based on common sense and the context of the data to generate a useful query. If ambiguity is too high, generate the most likely query based on best interpretation.
+
+        5. **Focus on Data Retrieval, Not Just Keyword Matching:** Generate SQL that actually retrieves the *data* the user is likely interested in, based on their intent, rather than just blindly translating keywords into SQL syntax.
+
+        6. **Error Tolerance:** If a part of the user's query is unclear or potentially problematic, try to generate a query that still returns *some* relevant data, rather than failing completely.  If complete accuracy is impossible due to user input vagueness, prioritize returning *useful* data.
+
+        Given the user query: '{user_query}', generate a SQL query to retrieve the requested data from the table 'data'.
         """
         if is_json:
             prompt += """
             The data inside the table is in JSON format.
-             Rules:
+            Rules:
             1. If querying a key inside the JSON object, use `->>` operator to specify the key.
             2. If the data has nested JSON objects, use nested `->>` operators to select the keys.
             3. The table column named `tables` contain data inside a json format.
             4. If the table column `tables` has an array of json, use `unnest` operator before accessing keys.
             """
         else:
-           prompt +=  """
-            Rules:
-           """
-        prompt += """
-        1. Select only the data asked in the prompt. Do not return all columns.
-        2. Ensure the query uses the correct column names and data types, casting as required.
-        3. The query must follow standard SQL syntax rules.
-        4. Return only the SQL query. Do not include any other text or explanation. Do not add markdown.
-        """
-        if previous_queries:
-            prompt += f"\nPrevious Queries:\n{previous_queries}"
+            prompt +=  """
+                General SQL Rules:
+            """
+            prompt += """
+            1. Select only the data asked in the prompt. Do not return all columns unless explicitly requested.
+            2. Ensure the query uses the correct column names and data types, casting as required.
+            3. The query must follow standard SQL syntax rules for DuckDB.
+            4. Return only the SQL query. Do not include any other text or explanation. Do not add markdown.
+            """
+            if previous_queries:
+                prompt += f"\nPrevious Queries:\n{previous_queries}"
 
-        if previous_results:
-            prompt += f"\nPrevious Results:\n{previous_results}"
+            if previous_results:
+                prompt += f"\nPrevious Results:\n{previous_results}"
 
-        prompt += """
+            prompt += """
 
-        Output:
-        SQL Query:
-        """
-        return prompt
+            Output:
+            SQL Query:
+            """
+            return prompt
 
 
 class DatabaseHandler:
