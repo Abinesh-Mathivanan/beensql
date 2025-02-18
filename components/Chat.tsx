@@ -12,22 +12,18 @@ const Chat: React.FC<ChatProps> = ({ onFileUploaded }) => {
   const [columns, setColumns] = useState<string[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
 
-  // Fetch actual column names from the uploaded file
+  // Fetch actual column names from the uploaded file using a dedicated endpoint
   const fetchColumns = async (filename: string) => {
     console.log("Fetching columns for:", filename);
-
-    const query = `SELECT name AS column_name FROM pragma_table_info('data');`;
     try {
-      const response = await fetch("http://localhost:5000/api/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: query, filename }),
-      });
+      const response = await fetch(
+        `http://localhost:5000/api/columns?filename=${encodeURIComponent(filename)}`,
+        { method: "GET" }
+      );
       const data = await response.json();
 
-      if (response.ok && data.result && Array.isArray(data.result)) {
-        const colNames = data.result.map((row: any) => row.column_name);
-        setColumns(colNames);
+      if (response.ok && data.columns && Array.isArray(data.columns)) {
+        setColumns(data.columns);
       } else {
         console.error("Invalid column response:", data);
         setColumns([]);
@@ -60,7 +56,7 @@ const Chat: React.FC<ChatProps> = ({ onFileUploaded }) => {
         setFileName(data.filename);
         onFileUploaded(data.filename);
 
-        // Fetch column names
+        // Fetch column names using the dedicated endpoint
         await fetchColumns(data.filename);
       } else {
         const errorData = await response.json();

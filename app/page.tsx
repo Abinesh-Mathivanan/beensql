@@ -59,12 +59,11 @@ export default function HomePage() {
   const [filename, setFilename] = useState<string | null>(null);
 
   // Chat-like messages: each message is { role: 'user' | 'assistant', content: string }
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>(
-    []
-  );
+  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
 
   // Called by Chat when file is uploaded
   const handleFileUploaded = (file: string | null) => {
+    console.log("File uploaded:", file);
     setFilename(file);
   };
 
@@ -99,22 +98,58 @@ export default function HomePage() {
       { role: "user", content: "Show column names" },
     ]);
 
-    // This is the correct syntax for SQLite / DuckDB to get columns from a CSV/Excel-based table named 'data'
-    const query = `SELECT name AS column_name FROM pragma_table_info('data');`;
-    const result = await runQuery(query);
-
-    let output = "";
-    if (result.error) {
-      output = `Error: ${JSON.stringify(result.error, null, 2)}`;
-    } else if (Array.isArray(result.result) && result.result.length > 0) {
-      // Generate ASCII table from the rows
-      output = generateASCIITable(result.result);
-    } else {
-      output = "No columns found or empty result.";
+    if (!filename) {
+      const msg = "No file uploaded. Please upload a file first.";
+      console.error(msg);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: msg },
+      ]);
+      return;
     }
 
-    // Add an assistant message
-    setMessages((prev) => [...prev, { role: "assistant", content: output }]);
+    try {
+      console.log("Fetching columns for filename:", filename);
+      // Call dedicated endpoint to get column names
+      const response = await fetch(
+        `http://localhost:5000/api/columns?filename=${encodeURIComponent(
+          filename
+        )}`
+      );
+      const data = await response.json();
+      console.log("Response from /api/columns:", data);
+
+      let output = "";
+      if (
+        response.ok &&
+        data.columns &&
+        Array.isArray(data.columns) &&
+        data.columns.length > 0
+      ) {
+        // Prepare tableData as one object with keys = column names and values = column names
+        const tableData = [
+          data.columns.reduce((acc: any, col: string) => {
+            acc[col] = col;
+            return acc;
+          }, {}),
+        ];
+        output = generateASCIITable(tableData);
+      } else {
+        output = "No columns found or empty result.";
+        console.error("Columns endpoint returned empty:", data);
+      }
+      // Add an assistant message with the column names
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: output },
+      ]);
+    } catch (error) {
+      console.error("Error fetching columns:", error);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Error fetching column names." },
+      ]);
+    }
   };
 
   // 2) Handling user’s custom query (the bottom prompt)
@@ -179,7 +214,6 @@ export default function HomePage() {
                 msg.role === "assistant" ? "text-blue-600" : "text-black"
               }`}
             >
-              {/* You could style these differently if you want “bubbles” */}
               <pre className="whitespace-pre-wrap">{msg.content}</pre>
             </div>
           ))}

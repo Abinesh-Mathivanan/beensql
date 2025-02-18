@@ -1,7 +1,7 @@
-# backend/app.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
+import csv
 from dotenv import load_dotenv
 from upload_handler import handle_upload
 from query_handler import handle_query
@@ -11,7 +11,7 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-metadata_store = {} # Keep metadata store in app.py
+metadata_store = {}  # Global metadata store
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
@@ -24,7 +24,7 @@ def upload_file():
             return jsonify({'message': 'No selected file'}), 400
 
         if file:
-            result = handle_upload(file, metadata_store) # Pass metadata_store
+            result = handle_upload(file, metadata_store)  # Make sure handle_upload saves metadata properly!
             return jsonify(result), 200
         else:
             return jsonify({'message': 'Upload failed'}), 400
@@ -45,13 +45,50 @@ def query_data():
         if filename not in metadata_store:
             return jsonify({'message': 'Metadata not found for filename. Please upload file again.'}), 404
 
-        metadata = metadata_store[filename] # Retrieve metadata from store
+        metadata = metadata_store[filename]
         result = handle_query(prompt, metadata)
         return jsonify(result), 200
 
     except Exception as e:
         print(f"Query error: {e}")
         return jsonify({'message': 'Error processing query', 'error': str(e)}), 500
+
+@app.route('/api/columns', methods=['GET'])
+def get_columns():
+    """
+    Retrieve column names for the given file.
+    Expects a query parameter 'filename'.
+    """
+    filename = request.args.get('filename')
+    if not filename:
+        return jsonify({'message': 'Filename is required'}), 400
+
+    # Normalize filename
+    normalized_filename = filename.lower()
+
+    if normalized_filename not in metadata_store:
+        return jsonify({'message': 'Metadata not found for filename.'}), 404
+
+    metadata = metadata_store[normalized_filename]
+    # Try both "columns" and "column_names"
+    columns = metadata.get("columns") or metadata.get("column_names")
+    
+    # If still not found, read from the file
+    if not columns:
+        file_path = metadata.get("file_path") or metadata.get("filepath")
+        if not file_path or not os.path.exists(file_path):
+            return jsonify({'message': 'File path not available in metadata.'}), 404
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                import csv
+                reader = csv.reader(f)
+                columns = next(reader)
+            # Optionally, cache it as "columns"
+            metadata["columns"] = columns
+        except Exception as e:
+            return jsonify({'message': 'Error parsing CSV header', 'error': str(e)}), 500
+
+    return jsonify({"columns": columns}), 200
 
 
 if __name__ == '__main__':

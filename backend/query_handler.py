@@ -24,7 +24,7 @@ class ModelHandler:
             raise ValueError(f"API key for {self.provider} is missing. Please set {self.provider.upper()}_API_KEY as an environment variable.")
         if self.provider == 'gemini':
             genai.configure(api_key=api_key)
-            return genai.GenerativeModel('gemini-2.0-flash-exp') # using 'gemini-2.0-flash-exp' as in the script
+            return genai.GenerativeModel('gemini-2.0-flash') # using 'gemini-2.0-flash-exp' as in the script
         elif self.provider == 'groq':
             return Groq(api_key=api_key)
         else:
