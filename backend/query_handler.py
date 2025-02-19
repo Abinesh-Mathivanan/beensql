@@ -56,7 +56,9 @@ class ModelHandler:
         - User might say "high sales" when the database column is "sales_amount".
         - User might use a category name like "Electronics" when the database has "Electronic Products".
         - User might use abbreviations or common names instead of full names.
-        - it's not necessarily the user is mentioning the column name in the query, for example when the user is mentioning to list the column names, he doesn't mean to use the column named 'column names', but the whole column names exist in the table
+        - User might make spelling mistakes while mentioning the column names, you should rectify it and process coreectly
+        - User might use abbrevations such as, 'CSK' for 'Chennai Super Kings'. You should understand the abbrevations and process coreectly
+        - it's not necessarily the user is mentioning the column name in the query, for example when the user is mentioning to list the column names, he doesn't mean to use the column named 'column names', but to list the whole column names exist in the table
 
         3. **Prioritize Semantic Matching over Exact String Matching:**  When comparing user-provided values (e.g., in WHERE clauses), aim for semantic similarity rather than strict, case-sensitive string matching, where appropriate and if possible with SQL capabilities (e.g., using `LIKE`, case-insensitive functions, or fuzzy matching techniques if DuckDB offers them and if relevant to the query intent).
 
