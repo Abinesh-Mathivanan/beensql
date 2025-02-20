@@ -11,7 +11,7 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-metadata_store = {}  # Global metadata store
+metadata_store = {}  
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
@@ -62,18 +62,15 @@ def get_columns():
     filename = request.args.get('filename')
     if not filename:
         return jsonify({'message': 'Filename is required'}), 400
-
-    # Normalize filename
+    
     normalized_filename = filename.lower()
 
     if normalized_filename not in metadata_store:
         return jsonify({'message': 'Metadata not found for filename.'}), 404
 
     metadata = metadata_store[normalized_filename]
-    # Try both "columns" and "column_names"
     columns = metadata.get("columns") or metadata.get("column_names")
     
-    # If still not found, read from the file
     if not columns:
         file_path = metadata.get("file_path") or metadata.get("filepath")
         if not file_path or not os.path.exists(file_path):
@@ -83,7 +80,6 @@ def get_columns():
                 import csv
                 reader = csv.reader(f)
                 columns = next(reader)
-            # Optionally, cache it as "columns"
             metadata["columns"] = columns
         except Exception as e:
             return jsonify({'message': 'Error parsing CSV header', 'error': str(e)}), 500

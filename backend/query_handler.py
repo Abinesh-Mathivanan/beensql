@@ -1,17 +1,29 @@
-# backend/query_handler.py
 import google.generativeai as genai
 import os
 import re
-import json
 import duckdb
 import polars as pl
 from groq import Groq
 import logging
 from dotenv import load_dotenv
+import chardet  
 
-load_dotenv()  # Load environment variables for API keys
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def detect_encoding(file_path, n_bytes=10000):
+    try:
+        with open(file_path, "rb") as f:
+            raw_data = f.read(n_bytes)
+        detection = chardet.detect(raw_data)
+        encoding = detection.get("encoding")
+        if not encoding:
+            encoding = "utf-8"
+        return encoding
+    except Exception as e:
+        logging.error(f"Error detecting encoding: {e}")
+        return "utf-8"
 
 class ModelHandler:
     def __init__(self, provider, api_key=None):
@@ -19,12 +31,12 @@ class ModelHandler:
         self.model = self._configure_api(api_key)
 
     def _configure_api(self, api_key=None):
-        api_key = os.environ.get(f'{self.provider.upper()}_API_KEY') # get api key from env
+        api_key = os.environ.get(f'{self.provider.upper()}_API_KEY')
         if api_key is None:
             raise ValueError(f"API key for {self.provider} is missing. Please set {self.provider.upper()}_API_KEY as an environment variable.")
         if self.provider == 'gemini':
             genai.configure(api_key=api_key)
-            return genai.GenerativeModel('gemini-2.0-flash') # using 'gemini-2.0-flash-exp' as in the script
+            return genai.GenerativeModel('gemini-2.0-flash')
         elif self.provider == 'groq':
             return Groq(api_key=api_key)
         else:
@@ -50,77 +62,51 @@ class ModelHandler:
 
         **General Guidelines for Robust Query Generation:**
 
-        1. **Interpret User Intent Flexibly:** Understand the underlying intent of the user's query, even if the phrasing is not perfectly aligned with the database schema or data values.  Users may use synonyms, paraphrases, abbreviations, or different levels of detail.
-
-        2. **Handle Variations in Data Values:** Be prepared for user queries to use slightly different terminology or phrasing compared to the exact values stored in the database.  For example:
-        - User might say "high sales" when the database column is "sales_amount".
-        - User might use a category name like "Electronics" when the database has "Electronic Products".
-        - User might use abbreviations or common names instead of full names.
-        - User might make spelling mistakes while mentioning the column names, you should rectify it and process coreectly
-        - User might use abbrevations such as, 'CSK' for 'Chennai Super Kings'. You should understand the abbrevations and process coreectly
-        - it's not necessarily the user is mentioning the column name in the query, for example when the user is mentioning to list the column names, he doesn't mean to use the column named 'column names', but to list the whole column names exist in the table
-
-        3. **Prioritize Semantic Matching over Exact String Matching:**  When comparing user-provided values (e.g., in WHERE clauses), aim for semantic similarity rather than strict, case-sensitive string matching, where appropriate and if possible with SQL capabilities (e.g., using `LIKE`, case-insensitive functions, or fuzzy matching techniques if DuckDB offers them and if relevant to the query intent).
-
-        4. **Assume Reasonable Defaults:** If the user's query is slightly ambiguous, make reasonable assumptions based on common sense and the context of the data to generate a useful query. If ambiguity is too high, generate the most likely query based on best interpretation.
-
-        5. **Focus on Data Retrieval, Not Just Keyword Matching:** Generate SQL that actually retrieves the *data* the user is likely interested in, based on their intent, rather than just blindly translating keywords into SQL syntax.
-
-        6. **Error Tolerance:** If a part of the user's query is unclear or potentially problematic, try to generate a query that still returns *some* relevant data, rather than failing completely.  If complete accuracy is impossible due to user input vagueness, prioritize returning *useful* data.
+        1. Interpret user intent flexibly.
+        2. Handle variations, abbreviations, and anomalies in data values.
+        3. Prioritize semantic matching over exact string matching.
+        4. Assume reasonable defaults if ambiguous.
+        5. Focus on retrieving the data the user wants.
+        6. Tolerate errors and produce a useful query.
 
         Given the user query: '{user_query}', generate a SQL query to retrieve the requested data from the table 'data'.
         """
         if is_json:
             prompt += """
-            The data inside the table is in JSON format.
+            The data is in JSON format.
             Rules:
-            1. If querying a key inside the JSON object, use `->>` operator to specify the key.
-            2. If the data has nested JSON objects, use nested `->>` operators to select the keys.
-            3. The table column named `tables` contain data inside a json format.
-            4. If the table column `tables` has an array of json, use `unnest` operator before accessing keys.
+            1. Use the `->>` operator for JSON keys.
+            2. Use nested `->>` for nested JSON.
+            3. The column 'tables' contains JSON data.
+            4. Use 'unnest' if 'tables' is an array of JSON.
             """
         else:
-            prompt +=  """
-                General SQL Rules:
-            """
             prompt += """
-            1. Select only the data asked in the prompt. Do not return all columns unless explicitly requested.
-            2. Ensure the query uses the correct column names and data types, casting as required.
-            3. The query must follow standard SQL syntax rules for DuckDB.
-            4. Return only the SQL query. Do not include any other text or explanation. Do not add markdown.
+            General SQL Rules:
+            1. Select only the data asked for in the prompt.
+            2. Use correct column names and data types.
+            3. Follow standard SQL syntax for DuckDB.
+            4. Return only the SQL query (no extra text).
             """
             if previous_queries:
                 prompt += f"\nPrevious Queries:\n{previous_queries}"
-
             if previous_results:
                 prompt += f"\nPrevious Results:\n{previous_results}"
-
-            prompt += """
-
-            Output:
-            SQL Query:
-            """
-            return prompt
-
+            prompt += "\nOutput:\nSQL Query:"
+        return prompt
 
 class DatabaseHandler:
     def __init__(self, file_path, config=None):
-        logging.info("DatabaseHandler __init__ started") # Log at start of __init__
+        logging.info("DatabaseHandler __init__ started")
         self.file_path = file_path
         self.config = config or {}
-        logging.info("Calling _create_connection") # Log before _create_connection
         self.conn = self._create_connection()
-        logging.info("Connection created successfully") # Log after _create_connection
-        logging.info("Calling _fetch_column_info") # Log before _fetch_column_info
         self.column_names = self._fetch_column_info()
-        logging.info("Column info fetched successfully") # Log after _fetch_column_info
         self.previous_queries = []
         self.previous_results = []
         self.is_json = os.path.splitext(self.file_path)[1].lower() == '.json'
-        logging.info("DatabaseHandler __init__ completed") # Log at end of __init__
 
     def _create_connection(self):
-        logging.info("_create_connection started") # Log at start of _create_connection
         try:
             conn = duckdb.connect(':memory:')
             file_extension = os.path.splitext(self.file_path)[1].lower()
@@ -130,55 +116,43 @@ class DatabaseHandler:
                 conn.execute(f"CREATE TABLE data AS SELECT * FROM read_json_auto('{self.file_path}', ignore_errors=true)")
             else:
                 raise ValueError(f"Unsupported file type: {file_extension}. Only CSV and JSON are supported.")
-            logging.info("_create_connection completed successfully") # Log at end of _create_connection success
             return conn
         except Exception as e:
-            logging.error(f"Error creating database connection in _create_connection: {e}") # Log error in _create_connection
+            logging.error(f"Error creating database connection: {e}")
             raise
 
     def _fetch_column_info(self):
-        logging.info("_fetch_column_info started") # Log at start of _fetch_column_info
         try:
             column_info = self.conn.execute("PRAGMA table_info('data')").fetchall()
             column_names = [f"{col[1]}::{col[2]}" for col in column_info]
-            logging.info(f"_fetch_column_info fetched column names: {column_names}") # Log fetched column names
-            logging.info("_fetch_column_info completed successfully") # Log at end of _fetch_column_info success
             return column_names
         except Exception as e:
-            logging.error(f"Error fetching column information in _fetch_column_info: {e}") # Log error in _fetch_column_info
+            logging.error(f"Error fetching column information: {e}")
             raise
 
     def execute_query(self, sql_query):
         try:
-            logging.info(f"Executing SQL query: {sql_query}")
-            result = self.conn.execute(sql_query).fetchall()
-            if result:
-                df = pl.DataFrame(result, strict=False)
-                if df.shape[1] == 1 and self.is_json:
-                    for col in df.columns:
-                      if isinstance(df[col][0], str):
-                         df = df.with_columns(pl.col(col).str.json_decode().alias(col))
-                self.previous_queries.append(sql_query)
-                self.previous_results.append(str(df))
-                logging.debug(f"Query result:\n{df}")
-                return df
-            else:
-                logging.info("No data returned")
-                return pl.DataFrame()
-        except duckdb.ParserException as e:
-            logging.error(f"SQL syntax error: {e}")
-            return f"Error: SQL Syntax error - Please check your query. Details: {e}"
-        except duckdb.CatalogException as e:
-            logging.error(f"Column name error: {e}")
-            return f"Error: Column name error - Please check if the column names are correct. Details: {e}"
+            encoding = detect_encoding(self.file_path)
+            df = pl.read_csv(
+                self.file_path,
+                encoding=encoding,
+                ignore_errors=True,
+                null_values=["NA"],
+                infer_schema_length=10000
+            )
+            con = duckdb.connect()
+            con.register("data", df)
+            result = con.execute(sql_query).fetchdf()
+            polars_result = pl.from_pandas(result)
+            self.previous_queries.append(sql_query)
+            self.previous_results.append(str(polars_result))
+            return polars_result
         except Exception as e:
-            logging.error(f"An unexpected error occurred: {e}")
-            return f"An unexpected error occurred: {e}. Please review the prompt or try again."
+            return f"Error executing query: {e}"
 
     def close(self):
         if self.conn:
             self.conn.close()
-            logging.info("Database connection closed.")
 
 def clean_sql_query(sql_query):
     sql_query = re.sub(r'```sql', '', sql_query, flags=re.IGNORECASE)
@@ -186,13 +160,12 @@ def clean_sql_query(sql_query):
     sql_query = re.sub(r'\n', ' ', sql_query)
     return sql_query.strip()
 
-
 def handle_query(user_prompt, metadata):
-    db_handler = None  # Initialize db_handler to None outside try block
+    db_handler = None
     try:
-        model_provider = 'gemini' # or choose_model() logic if you want to implement model choice in API
-        model_handler = ModelHandler(model_provider) # Initialize ModelHandler
-        db_handler = DatabaseHandler(file_path=metadata['file_path']) # Initialize DatabaseHandler
+        model_provider = 'gemini'
+        model_handler = ModelHandler(model_provider)
+        db_handler = DatabaseHandler(file_path=metadata['file_path'])
 
         column_names = metadata['column_names']
         is_json_file = os.path.splitext(metadata['file_path'])[1].lower() == '.json'
@@ -200,29 +173,40 @@ def handle_query(user_prompt, metadata):
         sql_query_raw = model_handler.generate_sql_query(
             user_prompt,
             column_names,
-            db_handler.previous_queries, # Pass previous queries
-            db_handler.previous_results, # Pass previous results
+            db_handler.previous_queries,
+            db_handler.previous_results,
             is_json=is_json_file
         )
 
-        logging.info(f"Generated Raw SQL: {sql_query_raw}")
         cleaned_sql_query = clean_sql_query(sql_query_raw)
-        logging.info(f"Cleaned SQL Query: {cleaned_sql_query}")
-
         query_result = db_handler.execute_query(cleaned_sql_query)
 
-        if isinstance(query_result, str): # Error string from execute_query
+        if isinstance(query_result, str):
             return {"query": cleaned_sql_query, "resultDescription": query_result, "result": None}
-        elif query_result.is_empty():
+
+        if query_result.is_empty():
             return {"query": cleaned_sql_query, "resultDescription": "No data returned from this query.", "result": None}
-        else:
-            result_dict = query_result.to_dicts() # Corrected to_dicts() here as well
-            return {"query": cleaned_sql_query, "resultDescription": "Query executed successfully.", "result": result_dict}
+
+        desired_columns = [col.split("::")[0] for col in metadata["column_names"]]
+        if len(query_result.columns) == len(desired_columns):
+            rename_map = dict(zip(query_result.columns, desired_columns))
+            query_result = query_result.rename(rename_map)
+        
+        table = [query_result.columns] + query_result.to_numpy().tolist()
+
+        col_widths = [max(len(str(item)) for item in col) for col in zip(*table)]
+        table_str = "\n".join("  ".join(str(item).ljust(width) for item, width in zip(row, col_widths)) for row in table)
+
+        return {
+            "query": cleaned_sql_query,
+            "resultDescription": "Query executed successfully.",
+            "result": table_str
+        }
 
     except Exception as e:
         error_message = f"Error processing query: {e}"
         logging.error(error_message)
         return {"query": None, "resultDescription": error_message, "result": None}
     finally:
-        if db_handler: # Check if db_handler is not None before calling close
+        if db_handler:
             db_handler.close()
