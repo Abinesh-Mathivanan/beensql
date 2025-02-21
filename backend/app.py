@@ -9,12 +9,10 @@ from query_handler import handle_query
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True, resources={r"/*": {"origins": "*"}})
+CORS(app, origins=["https://beensql.vercel.app", "http://localhost:3000"], supports_credentials=True)
 
-# After-request hook to ensure CORS headers are always added.
 @app.after_request
 def add_cors_headers(response):
-    # If the request had an Origin header, echo it back. Otherwise, allow all.
     origin = request.headers.get('Origin') or '*'
     response.headers['Access-Control-Allow-Origin'] = origin
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
