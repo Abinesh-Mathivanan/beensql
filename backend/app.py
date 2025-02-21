@@ -87,5 +87,6 @@ def get_columns():
     return jsonify({"columns": columns}), 200
 
 
-if __name__ == '__main__':
-    app.run(debug=False, port=os.environ.get('PORT', 5000))  
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))  # Render provides a PORT env variable
+    app.run(host="0.0.0.0", port=port)
