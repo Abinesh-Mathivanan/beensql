@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 import os
 import csv
 from dotenv import load_dotenv
@@ -9,7 +9,7 @@ from query_handler import handle_query
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True, resources={r"/*": {"origins": "*"}})
 
 metadata_store = {}  
 
@@ -33,6 +33,7 @@ def upload_file():
         return jsonify({'message': 'File upload failed', 'error': str(e)}), 500
 
 @app.route('/api/query', methods=['POST'])
+@cross_origin()
 def query_data():
     try:
         data = request.get_json()
