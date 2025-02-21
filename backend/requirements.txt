@@ -8,3 +8,4 @@ chardet
 google-generativeai
 pyarrow
 numpy
+gunicorn
