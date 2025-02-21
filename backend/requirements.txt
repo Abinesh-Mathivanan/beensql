@@ -6,3 +6,4 @@ polars
 groq
 chardet
 google-generativeai
+pyarrow

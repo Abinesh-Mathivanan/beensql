@@ -17,7 +17,7 @@ export default function HomePage() {
       return { error: { message: "No file uploaded. Please upload a file first." } };
     }
     try {
-      const response = await fetch("http://localhost:5000/api/query", {
+      const response = await fetch("https://beensql.onrender.com/api/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt, filename }),
@@ -43,7 +43,7 @@ export default function HomePage() {
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/columns?filename=${encodeURIComponent(filename)}`,
+        `https://beensql.onrender.com/api/columns?filename=${encodeURIComponent(filename)}`,
         { method: "GET" }
       );
       const data = await response.json();

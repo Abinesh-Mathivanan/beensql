@@ -14,7 +14,7 @@ const Chat: React.FC<ChatProps> = ({ onFileUploaded }) => {
   const fetchColumns = async (filename: string) => {
     try {
       const response = await fetch(
-        `http://localhost:5000/api/columns?filename=${encodeURIComponent(filename)}`,
+        `https://beensql.onrender.com/api/columns?filename=${encodeURIComponent(filename)}`,
         { method: "GET" }
       );
       const data = await response.json();
@@ -39,7 +39,7 @@ const Chat: React.FC<ChatProps> = ({ onFileUploaded }) => {
       formData.append("file", file);
 
       try {
-        const response = await fetch("http://localhost:5000/api/upload", {
+        const response = await fetch("https://beensql.onrender.com/api/upload", {
           method: "POST",
           body: formData,
         });
