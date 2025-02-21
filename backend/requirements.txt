@@ -7,3 +7,4 @@ groq
 chardet
 google-generativeai
 pyarrow
+numpy
