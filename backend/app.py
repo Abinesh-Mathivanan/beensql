@@ -9,7 +9,7 @@ from query_handler import handle_query
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+CORS(app)
 
 metadata_store = {}  
 
