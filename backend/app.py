@@ -9,12 +9,26 @@ from query_handler import handle_query
 load_dotenv()
 
 app = Flask(__name__)
+# Globally enable CORS for all routes.
 CORS(app, supports_credentials=True, resources={r"/*": {"origins": "*"}})
+
+# After-request hook to ensure CORS headers are always added.
+@app.after_request
+def add_cors_headers(response):
+    # If the request had an Origin header, echo it back. Otherwise, allow all.
+    origin = request.headers.get('Origin') or '*'
+    response.headers['Access-Control-Allow-Origin'] = origin
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+    return response
 
 metadata_store = {}  
 
-@app.route('/api/upload', methods=['POST'])
+# Handle OPTIONS for preflight and POST for file upload.
+@app.route('/api/upload', methods=['POST', 'OPTIONS'])
 def upload_file():
+    if request.method == 'OPTIONS':
+        return '', 204
     try:
         if 'file' not in request.files:
             return jsonify({'message': 'No file part'}), 400
@@ -24,7 +38,7 @@ def upload_file():
             return jsonify({'message': 'No selected file'}), 400
 
         if file:
-            result = handle_upload(file, metadata_store)  # Make sure handle_upload saves metadata properly!
+            result = handle_upload(file, metadata_store)  # Ensure handle_upload saves metadata properly.
             return jsonify(result), 200
         else:
             return jsonify({'message': 'Upload failed'}), 400
@@ -32,9 +46,12 @@ def upload_file():
         print(f"Upload error: {e}")
         return jsonify({'message': 'File upload failed', 'error': str(e)}), 500
 
-@app.route('/api/query', methods=['POST'])
+# Handle OPTIONS for preflight and POST for query.
+@app.route('/api/query', methods=['POST', 'OPTIONS'])
 @cross_origin()
 def query_data():
+    if request.method == 'OPTIONS':
+        return '', 204
     try:
         data = request.get_json()
         prompt = data.get('prompt')
@@ -54,12 +71,11 @@ def query_data():
         print(f"Query error: {e}")
         return jsonify({'message': 'Error processing query', 'error': str(e)}), 500
 
-@app.route('/api/columns', methods=['GET'])
+# Handle OPTIONS for preflight and GET for columns.
+@app.route('/api/columns', methods=['GET', 'OPTIONS'])
 def get_columns():
-    """
-    Retrieve column names for the given file.
-    Expects a query parameter 'filename'.
-    """
+    if request.method == 'OPTIONS':
+        return '', 204
     filename = request.args.get('filename')
     if not filename:
         return jsonify({'message': 'Filename is required'}), 400
@@ -78,7 +94,6 @@ def get_columns():
             return jsonify({'message': 'File path not available in metadata.'}), 404
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
-                import csv
                 reader = csv.reader(f)
                 columns = next(reader)
             metadata["columns"] = columns
@@ -87,7 +102,6 @@ def get_columns():
 
     return jsonify({"columns": columns}), 200
 
-
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # Render provides a PORT env variable
+    port = int(os.environ.get("PORT", 5000))  # Render provides a PORT env variable.
     app.run(host="0.0.0.0", port=port)
