@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 import os
 import csv
 from dotenv import load_dotenv
@@ -9,69 +9,58 @@ from query_handler import handle_query
 load_dotenv()
 
 app = Flask(__name__)
+CORS(app, supports_credentials=True, resources={r"/*": {"origins": "*"}})
 
-# Define allowed origins - you should modify these based on your environments
-ALLOWED_ORIGINS = [
-    'http://localhost:3000',  # Local development
-    'http://localhost:5000', 
-    'https://beensql.vercel.app/' # Local Flask
-]
-
-# Configure CORS with specific origins and options
-CORS(app, resources={
-    r"/api/*": {
-        "origins": ALLOWED_ORIGINS,
-        "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True,
-        "max_age": 3600  # Cache preflight requests for 1 hour
-    }
-})
-
-metadata_store = {}
-
-# Simplified CORS after-request handler
+# After-request hook to ensure CORS headers are always added.
 @app.after_request
 def add_cors_headers(response):
-    origin = request.headers.get('Origin')
-    if origin in ALLOWED_ORIGINS:
-        response.headers['Access-Control-Allow-Origin'] = origin
+    # If the request had an Origin header, echo it back. Otherwise, allow all.
+    origin = request.headers.get('Origin') or '*'
+    response.headers['Access-Control-Allow-Origin'] = origin
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
     return response
 
-@app.route('/api/upload', methods=['POST'])
+metadata_store = {}  
+
+# Handle OPTIONS for preflight and POST for file upload.
+@app.route('/api/upload', methods=['POST', 'OPTIONS'])
 def upload_file():
+    if request.method == 'OPTIONS':
+        return '', 204
     try:
         if 'file' not in request.files:
-            return jsonify({'error': {'message': 'No file part'}}), 400
+            return jsonify({'message': 'No file part'}), 400
 
         file = request.files['file']
         if file.filename == '':
-            return jsonify({'error': {'message': 'No selected file'}}), 400
+            return jsonify({'message': 'No selected file'}), 400
 
         if file:
-            result = handle_upload(file, metadata_store)
+            result = handle_upload(file, metadata_store)  # Ensure handle_upload saves metadata properly.
             return jsonify(result), 200
         else:
-            return jsonify({'error': {'message': 'Upload failed'}}), 400
+            return jsonify({'message': 'Upload failed'}), 400
     except Exception as e:
         print(f"Upload error: {e}")
-        return jsonify({'error': {'message': str(e)}}), 500
+        return jsonify({'message': 'File upload failed', 'error': str(e)}), 500
 
-@app.route('/api/query', methods=['POST'])
+# Handle OPTIONS for preflight and POST for query.
+@app.route('/api/query', methods=['POST', 'OPTIONS'])
+@cross_origin()
 def query_data():
+    if request.method == 'OPTIONS':
+        return '', 204
     try:
         data = request.get_json()
-        if not data:
-            return jsonify({'error': {'message': 'No JSON data received'}}), 400
-
         prompt = data.get('prompt')
         filename = data.get('filename')
 
         if not prompt or not filename:
-            return jsonify({'error': {'message': 'Prompt and filename are required'}}), 400
+            return jsonify({'message': 'Prompt and filename are required'}), 400
 
         if filename not in metadata_store:
-            return jsonify({'error': {'message': 'Metadata not found for filename. Please upload file again.'}}), 404
+            return jsonify({'message': 'Metadata not found for filename. Please upload file again.'}), 404
 
         metadata = metadata_store[filename]
         result = handle_query(prompt, metadata)
@@ -79,18 +68,21 @@ def query_data():
 
     except Exception as e:
         print(f"Query error: {e}")
-        return jsonify({'error': {'message': str(e)}}), 500
+        return jsonify({'message': 'Error processing query', 'error': str(e)}), 500
 
-@app.route('/api/columns', methods=['GET'])
+# Handle OPTIONS for preflight and GET for columns.
+@app.route('/api/columns', methods=['GET', 'OPTIONS'])
 def get_columns():
+    if request.method == 'OPTIONS':
+        return '', 204
     filename = request.args.get('filename')
     if not filename:
-        return jsonify({'error': {'message': 'Filename is required'}}), 400
+        return jsonify({'message': 'Filename is required'}), 400
     
     normalized_filename = filename.lower()
 
     if normalized_filename not in metadata_store:
-        return jsonify({'error': {'message': 'Metadata not found for filename.'}}), 404
+        return jsonify({'message': 'Metadata not found for filename.'}), 404
 
     metadata = metadata_store[normalized_filename]
     columns = metadata.get("columns") or metadata.get("column_names")
@@ -98,26 +90,17 @@ def get_columns():
     if not columns:
         file_path = metadata.get("file_path") or metadata.get("filepath")
         if not file_path or not os.path.exists(file_path):
-            return jsonify({'error': {'message': 'File path not available in metadata.'}}), 404
+            return jsonify({'message': 'File path not available in metadata.'}), 404
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 reader = csv.reader(f)
                 columns = next(reader)
             metadata["columns"] = columns
         except Exception as e:
-            return jsonify({'error': {'message': f'Error parsing CSV header: {str(e)}'}}), 500
+            return jsonify({'message': 'Error parsing CSV header', 'error': str(e)}), 500
 
     return jsonify({"columns": columns}), 200
 
-# Error handlers
-@app.errorhandler(404)
-def not_found(e):
-    return jsonify({'error': {'message': 'Resource not found'}}), 404
-
-@app.errorhandler(500)
-def server_error(e):
-    return jsonify({'error': {'message': 'Internal server error'}}), 500
-
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 5000))  # Render provides a PORT env variable.
     app.run(host="0.0.0.0", port=port)
